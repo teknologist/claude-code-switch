@@ -3,9 +3,13 @@
 # Claude Code Model Switcher (ccm) - Standalone Version
 # ---------------------------------------------------------
 # Function: Quickly switch between different AI models
-# Supports: Claude, Deepseek, GLM4.6, KIMI2
+# Supports: Claude, Deepseek, GLM4.6, KIMI2, Qwen, LongCat,
+#           MiniMax, Seed-Code, KAT
 # Author: Peng
-# Version: 2.2.0
+# Version: 2.3.0
+#
+# CHANGED: Added zsh tab completion support
+# Setup:   eval "$(ccm completion)"  # Add to ~/.zshrc
 ############################################################
 
 # Script color definitions
@@ -1305,7 +1309,12 @@ show_help() {
     echo "  status, st       - $(t 'show_current_config')"
     echo "  env [model]      - $(t 'output_export_only')"
     echo "  config, cfg      - $(t 'edit_config_file')"
+    echo "  completion       - Output zsh completion script"
     echo "  help, h          - $(t 'show_help')"
+    echo ""
+    echo -e "${YELLOW}Shell Completion:${NC}"
+    echo "  # Add to ~/.zshrc for tab completion:"
+    echo "  eval \"\$(ccm completion)\""
     echo ""
     echo -e "${YELLOW}$(t 'examples'):${NC}"
     echo "  eval \"\$(ccm deepseek)\"                   # Apply in current shell (recommended)"
@@ -1656,6 +1665,164 @@ emit_env_exports() {
     esac
 }
 
+# ============================================
+# Zsh Completion Functions
+# ============================================
+
+# Get account names from accounts file (internal helper for completion)
+_get_account_names() {
+    if [[ -f "$ACCOUNTS_FILE" ]]; then
+        grep -o '"[^"]*":' "$ACCOUNTS_FILE" | tr -d '":' | tr '\n' ' '
+    fi
+}
+
+# Generate zsh completion script
+generate_zsh_completion() {
+    cat << 'ZSHCOMP'
+#compdef ccm ccc
+
+# Claude Code Model Switcher (ccm) - Zsh Completion
+# Add to ~/.zshrc: eval "$(ccm completion)"
+
+_ccm() {
+    local curcontext="$curcontext" state line
+    typeset -A opt_args
+
+    local -a commands
+    commands=(
+        # Model commands
+        'deepseek:Switch to Deepseek model'
+        'ds:Switch to Deepseek model (alias)'
+        'kimi:Switch to KIMI for Coding model'
+        'kimi2:Switch to KIMI for Coding model (alias)'
+        'kimi-cn:Switch to KIMI CN (China version)'
+        'qwen:Switch to Qwen model (Alibaba)'
+        'kat:Switch to StreamLake AI (KAT) model'
+        'longcat:Switch to LongCat model (Meituan)'
+        'lc:Switch to LongCat model (alias)'
+        'minimax:Switch to MiniMax M2 model'
+        'mm:Switch to MiniMax M2 model (alias)'
+        'seed:Switch to Doubao Seed-Code model'
+        'doubao:Switch to Doubao Seed-Code model (alias)'
+        'glm:Switch to GLM 4.6 model'
+        'glm4:Switch to GLM 4.6 model (alias)'
+        'glm4.6:Switch to GLM 4.6 model (alias)'
+        'claude:Switch to Claude Sonnet 4.5'
+        'sonnet:Switch to Claude Sonnet 4.5 (alias)'
+        's:Switch to Claude Sonnet 4.5 (alias)'
+        'opus:Switch to Claude Opus 4.5'
+        'o:Switch to Claude Opus 4.5 (alias)'
+        'haiku:Switch to Claude Haiku 4.5'
+        'h:Switch to Claude Haiku 4.5 (alias)'
+        # Account management
+        'save-account:Save current Claude Pro account'
+        'switch-account:Switch to saved account'
+        'list-accounts:List all saved accounts'
+        'delete-account:Delete saved account'
+        'rename-account:Rename saved account'
+        'current-account:Show current account info'
+        'debug-keychain:Debug Keychain credentials'
+        # Utility commands
+        'status:Show current configuration'
+        'st:Show current configuration (alias)'
+        'config:Edit configuration file'
+        'cfg:Edit configuration file (alias)'
+        'env:Output export statements only'
+        'completion:Output zsh completion script'
+        'help:Show help information'
+        '-h:Show help information'
+        '--help:Show help information'
+    )
+
+    # Get dynamic account list
+    local -a accounts
+    if [[ -f "$HOME/.ccm_accounts" ]]; then
+        accounts=(${(f)"$(grep -o '"[^"]*":' "$HOME/.ccm_accounts" 2>/dev/null | tr -d '\":')"})
+    fi
+
+    # Create model:account completions
+    local -a model_account_completions
+    local model account
+    for model in claude sonnet s opus o haiku h; do
+        for account in $accounts; do
+            model_account_completions+=("${model}:${account}:Switch to ${model} with account ${account}")
+        done
+    done
+
+    case $CURRENT in
+        2)
+            # First argument - complete commands and model:account format
+            _describe -t commands 'ccm command' commands
+            if (( ${#accounts} > 0 )); then
+                _describe -t model-accounts 'model:account' model_account_completions
+            fi
+
+            # Also handle partial model:account completion
+            if [[ "$words[2]" == *:* ]]; then
+                local model_prefix="${words[2]%%:*}"
+                case "$model_prefix" in
+                    claude|sonnet|s|opus|o|haiku|h)
+                        local -a account_completions
+                        for account in $accounts; do
+                            account_completions+=("${model_prefix}:${account}:Switch to ${model_prefix} with account ${account}")
+                        done
+                        _describe -t accounts 'account' account_completions
+                        ;;
+                esac
+            fi
+            ;;
+        3)
+            # Second argument - context-dependent completion
+            case $words[2] in
+                switch-account|delete-account)
+                    if (( ${#accounts} > 0 )); then
+                        _describe -t accounts 'saved account' accounts
+                    else
+                        _message 'no saved accounts'
+                    fi
+                    ;;
+                rename-account)
+                    if (( ${#accounts} > 0 )); then
+                        _describe -t accounts 'account to rename' accounts
+                    else
+                        _message 'no saved accounts'
+                    fi
+                    ;;
+                env)
+                    local -a models
+                    models=(
+                        'deepseek:Deepseek model'
+                        'kimi:KIMI model'
+                        'kimi-cn:KIMI CN model'
+                        'qwen:Qwen model'
+                        'glm:GLM model'
+                        'claude:Claude Sonnet'
+                        'opus:Claude Opus'
+                        'haiku:Claude Haiku'
+                        'longcat:LongCat model'
+                        'minimax:MiniMax model'
+                        'seed:Seed-Code model'
+                        'kat:KAT model'
+                    )
+                    _describe -t models 'model' models
+                    ;;
+            esac
+            ;;
+        4)
+            # Third argument (for rename-account: new name)
+            case $words[2] in
+                rename-account)
+                    _message 'new account name'
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+# Register completion for both ccm and ccc
+compdef _ccm ccm ccc
+ZSHCOMP
+}
 
 # 主函数
 main() {
@@ -1763,6 +1930,9 @@ main() {
             ;;
         "config"|"cfg")
             edit_config
+            ;;
+        "completion"|"--completion")
+            generate_zsh_completion
             ;;
         "help"|"-h"|"--help")
             show_help
