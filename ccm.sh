@@ -16,7 +16,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # 颜色控制（用于账号管理命令的输出）
-NO_COLOR=false
+NO_COLOR=${NO_COLOR:-false}
 
 # 根据NO_COLOR设置颜色（账号管理函数使用）
 set_no_color() {
@@ -42,6 +42,13 @@ LANG_DIR="$SCRIPT_DIR/lang"
 # 加载翻译
 load_translations() {
     local lang_code="${1:-en}"
+
+    # SECURITY FIX (MEDIUM-003): Validate language code to prevent path traversal
+    case "$lang_code" in
+        en|zh) ;;
+        *) lang_code="en" ;;
+    esac
+
     local lang_file="$LANG_DIR/${lang_code}.json"
 
     # 如果语言文件不存在，默认使用英语
@@ -60,18 +67,27 @@ load_translations() {
 
     # 读取JSON文件并解析到变量
     if [[ -f "$lang_file" ]]; then
-        local temp_file=$(mktemp)
+        local temp_file
+        temp_file=$(mktemp -t ccm_trans.XXXXXX) || return 1
+        chmod 600 "$temp_file"
+        # Ensure cleanup on exit/interrupt
+        trap 'rm -f "$temp_file" 2>/dev/null' RETURN
+
         # 提取键值对到临时文件，使用更健壮的方法
         grep -o '"[^"]*":[[:space:]]*"[^"]*"' "$lang_file" | sed 's/^"\([^"]*\)":[[:space:]]*"\([^"]*\)"$/\1|\2/' > "$temp_file"
 
         # 读取临时文件并设置变量（使用TRANS_前缀）
         while IFS='|' read -r key value; do
             if [[ -n "$key" && -n "$value" ]]; then
+                # SECURITY FIX (HIGH-001): Validate key contains only safe characters
+                if [[ ! "$key" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+                    continue  # Skip invalid keys
+                fi
                 # 处理转义字符
                 value="${value//\\\"/\"}"
                 value="${value//\\\\/\\}"
-                # 使用eval设置动态变量名
-                eval "TRANS_${key}=\"\$value\""
+                # Use printf and declare for safer variable assignment (avoid eval injection)
+                printf -v "TRANS_${key}" '%s' "$value"
             fi
         done < "$temp_file"
 
@@ -83,9 +99,14 @@ load_translations() {
 t() {
     local key="$1"
     local default="${2:-$key}"
+    # SECURITY FIX (HIGH-001): Validate key before variable lookup
+    if [[ ! "$key" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+        echo "$default"
+        return
+    fi
     local var_name="TRANS_${key}"
-    local value
-    eval "value=\"\${${var_name}:-}\""
+    # Use indirect expansion instead of eval for safer variable lookup
+    local value="${!var_name:-}"
     echo "${value:-$default}"
 }
 
@@ -168,12 +189,14 @@ SEED_MODEL=doubao-seed-code-preview-latest
 SEED_SMALL_FAST_MODEL=doubao-seed-code-preview-latest
 
 EOF
+        # SECURITY FIX (LOW-001): Set restrictive permissions on config file
+        chmod 600 "$CONFIG_FILE"
         echo -e "${YELLOW}⚠️  $(t 'config_created'): $CONFIG_FILE${NC}" >&2
         echo -e "${YELLOW}   $(t 'edit_file_to_add_keys')${NC}" >&2
         echo -e "${GREEN}🚀 Using default experience keys for now...${NC}" >&2
         # Don't return 1 - continue with default fallback keys
     fi
-    
+
     # 首先读取语言设置
     if [[ -f "$CONFIG_FILE" ]]; then
         local config_lang
@@ -186,7 +209,12 @@ EOF
     fi
 
     # 智能加载：只有环境变量未设置的键才从配置文件读取
-    local temp_file=$(mktemp)
+    # SECURITY FIX (MEDIUM-001): Secure temp file handling
+    local temp_file
+    temp_file=$(mktemp -t ccm_config.XXXXXX) || return 1
+    chmod 600 "$temp_file"
+    trap 'rm -f "$temp_file" 2>/dev/null' RETURN
+
     local raw
     while IFS= read -r raw || [[ -n "$raw" ]]; do
         # 去掉回车、去掉行内注释并修剪两端空白
@@ -199,7 +227,7 @@ EOF
         # 去掉首尾空白
         line=$(echo "$line" | sed -E 's/^[[:space:]]*//; s/[[:space:]]*$//')
         [[ -z "$line" ]] && continue
-        
+
         # 解析 export KEY=VALUE 或 KEY=VALUE
         if [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
             local key="${BASH_REMATCH[2]}"
@@ -220,12 +248,12 @@ EOF
             fi
         fi
     done < "$CONFIG_FILE"
-    
+
     # 执行临时文件中的export语句
     if [[ -s "$temp_file" ]]; then
         source "$temp_file"
     fi
-    rm -f "$temp_file"
+    # Note: temp_file cleanup handled by RETURN trap
 }
 
 # 创建默认配置文件
@@ -290,6 +318,8 @@ SEED_MODEL=doubao-seed-code-preview-latest
 SEED_SMALL_FAST_MODEL=doubao-seed-code-preview-latest
 
 EOF
+    # SECURITY FIX (LOW-001): Set restrictive permissions on config file
+    chmod 600 "$CONFIG_FILE"
     echo -e "${YELLOW}⚠️  $(t 'config_created'): $CONFIG_FILE${NC}" >&2
     echo -e "${YELLOW}   $(t 'edit_file_to_add_keys')${NC}" >&2
 }
@@ -338,8 +368,61 @@ mask_presence() {
 }
 
 # ============================================
+# Security Helper Functions
+# ============================================
+
+# Escape special regex characters in a string for safe use in grep patterns
+# This prevents dots and other special chars from being interpreted as regex
+escape_for_regex() {
+    printf '%s' "$1" | sed 's/[.[\*^$()+?{|\\]/\\&/g'
+}
+
+# SECURITY FIX (LOW-002): Sanitize user input for safe display
+# Removes control characters and ANSI escape sequences
+sanitize_for_display() {
+    local input="$1"
+    local max_len="${2:-100}"
+    # Remove ANSI escape sequences (comprehensive) and control characters except tab/newline
+    local sanitized
+    # Remove: CSI sequences, OSC sequences (terminal title etc), and other escape sequences
+    sanitized=$(printf '%s' "$input" | tr -d '\000-\010\013-\037\177' | \
+        sed -e 's/\x1b\[[0-9;?]*[a-zA-Z]//g' \
+            -e 's/\x1b\][^\x07]*\x07//g' \
+            -e 's/\x1b[PX^_][^\x1b]*\x1b\\//g' \
+            -e 's/\x1b.//g')
+    # Truncate if too long
+    if [[ ${#sanitized} -gt $max_len ]]; then
+        sanitized="${sanitized:0:$max_len}..."
+    fi
+    printf '%s' "$sanitized"
+}
+
+# ============================================
 # Claude Pro 账号管理功能
 # ============================================
+
+# SECURITY FIX (HIGH-002): Validate account name to prevent command injection
+# Only allows alphanumeric characters, hyphens, underscores, and dots
+validate_account_name() {
+    local name="$1"
+    if [[ -z "$name" ]]; then
+        return 1
+    fi
+    # Allow only safe characters: letters, numbers, hyphens, underscores, dots
+    # Must start with letter or number
+    if [[ ! "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
+        # SECURITY FIX (LOW-002): Sanitize input before displaying
+        echo -e "${RED}❌ Invalid account name: '$(sanitize_for_display "$name" 50)'${NC}" >&2
+        echo -e "${YELLOW}$(t 'invalid_account_name_format')${NC}" >&2
+        return 1
+    fi
+    # Limit length to prevent issues
+    if [[ ${#name} -gt 64 ]]; then
+        echo -e "${RED}❌ $(t 'account_name_too_long')${NC}" >&2
+        return 1
+    fi
+    return 0
+}
 
 # 从 macOS Keychain 读取 Claude Code 凭证
 read_keychain_credentials() {
@@ -386,6 +469,11 @@ write_keychain_credentials() {
 
 # 调试函数：验证 Keychain 中的凭证
 debug_keychain_credentials() {
+    # 检查是否需要禁用颜色（用于 eval）
+    if [[ "$NO_COLOR" == "true" ]]; then
+        set_no_color
+    fi
+
     echo -e "${BLUE}🔍 调试：检查 Keychain 中的凭证${NC}"
 
     local credentials=$(read_keychain_credentials)
@@ -446,6 +534,11 @@ save_account() {
         return 1
     fi
 
+    # SECURITY FIX (HIGH-002): Validate account name
+    if ! validate_account_name "$account_name"; then
+        return 1
+    fi
+
     # 从 Keychain 读取当前凭证
     local credentials
     credentials=$(read_keychain_credentials)
@@ -459,7 +552,12 @@ save_account() {
     init_accounts_file
 
     # 使用纯 Bash 解析和保存（不依赖 jq）
-    local temp_file=$(mktemp)
+    # SECURITY FIX (MEDIUM-001): Secure temp file handling
+    local temp_file
+    temp_file=$(mktemp -t ccm_accounts.XXXXXX) || return 1
+    chmod 600 "$temp_file"
+    trap 'rm -f "$temp_file" 2>/dev/null' RETURN
+
     local existing_accounts=""
 
     if [[ -f "$ACCOUNTS_FILE" ]]; then
@@ -477,11 +575,14 @@ EOF
     else
         # 读取现有账号，添加新账号
         # 检查账号是否已存在
-        if grep -q "\"$account_name\":" "$ACCOUNTS_FILE"; then
+        # Use escaped name for regex to handle dots and special chars
+        local escaped_name
+        escaped_name=$(escape_for_regex "$account_name")
+        if grep -q "\"$escaped_name\":" "$ACCOUNTS_FILE"; then
             # 更新现有账号
             local encoded_creds=$(echo "$credentials" | base64)
             # 使用 sed 替换现有条目
-            sed -i '' "s/\"$account_name\": *\"[^\"]*\"/\"$account_name\": \"$encoded_creds\"/" "$ACCOUNTS_FILE"
+            sed -i '' "s/\"$escaped_name\": *\"[^\"]*\"/\"$account_name\": \"$encoded_creds\"/" "$ACCOUNTS_FILE"
         else
             # 添加新账号
             local encoded_creds=$(echo "$credentials" | base64)
@@ -521,6 +622,11 @@ switch_account() {
         return 1
     fi
 
+    # SECURITY FIX (HIGH-002): Validate account name
+    if ! validate_account_name "$account_name"; then
+        return 1
+    fi
+
     if [[ ! -f "$ACCOUNTS_FILE" ]]; then
         echo -e "${RED}❌ $(t 'no_accounts_found')${NC}" >&2
         echo -e "${YELLOW}💡 $(t 'save_account_first')${NC}" >&2
@@ -528,7 +634,10 @@ switch_account() {
     fi
 
     # 从文件中读取账号凭证
-    local encoded_creds=$(grep -o "\"$account_name\": *\"[^\"]*\"" "$ACCOUNTS_FILE" | cut -d'"' -f4)
+    # Use escaped name for regex to handle dots and special chars
+    local escaped_name
+    escaped_name=$(escape_for_regex "$account_name")
+    local encoded_creds=$(grep -o "\"$escaped_name\": *\"[^\"]*\"" "$ACCOUNTS_FILE" | cut -d'"' -f4)
 
     if [[ -z "$encoded_creds" ]]; then
         echo -e "${RED}❌ $(t 'account_not_found'): $account_name${NC}" >&2
@@ -551,6 +660,11 @@ switch_account() {
 
 # 列出所有已保存的账号
 list_accounts() {
+    # 检查是否需要禁用颜色（用于 eval）
+    if [[ "$NO_COLOR" == "true" ]]; then
+        set_no_color
+    fi
+
     if [[ ! -f "$ACCOUNTS_FILE" ]]; then
         echo -e "${YELLOW}$(t 'no_accounts_saved')${NC}"
         echo -e "${YELLOW}💡 $(t 'use_save_account')${NC}"
@@ -570,7 +684,7 @@ list_accounts() {
         # 解码并提取信息
         local creds=$(echo "$encoded" | base64 -d 2>/dev/null)
         local subscription=$(echo "$creds" | grep -o '"subscriptionType":"[^"]*"' | cut -d'"' -f4)
-        local expires=$(echo "$creds" | grep -o '"expiresAt":[0-9]*' | cut -d':' -f2)
+        local expires=$(echo "$creds" | grep -o '"expiresAt":[0-9]*' | head -1 | cut -d':' -f2)
 
         # 检查是否是当前账号
         local is_current=""
@@ -590,11 +704,21 @@ list_accounts() {
 
 # 删除已保存的账号
 delete_account() {
+    # 检查是否需要禁用颜色（用于 eval）
+    if [[ "$NO_COLOR" == "true" ]]; then
+        set_no_color
+    fi
+
     local account_name="$1"
 
     if [[ -z "$account_name" ]]; then
         echo -e "${RED}❌ $(t 'account_name_required')${NC}" >&2
         echo -e "${YELLOW}💡 $(t 'usage'): ccm delete-account <name>${NC}" >&2
+        return 1
+    fi
+
+    # SECURITY FIX (HIGH-002): Validate account name
+    if ! validate_account_name "$account_name"; then
         return 1
     fi
 
@@ -604,14 +728,22 @@ delete_account() {
     fi
 
     # 检查账号是否存在
-    if ! grep -q "\"$account_name\":" "$ACCOUNTS_FILE"; then
+    # Use escaped name for regex to handle dots and special chars
+    local escaped_name
+    escaped_name=$(escape_for_regex "$account_name")
+    if ! grep -q "\"$escaped_name\":" "$ACCOUNTS_FILE"; then
         echo -e "${RED}❌ $(t 'account_not_found'): $account_name${NC}" >&2
         return 1
     fi
 
     # 删除账号（使用临时文件）
-    local temp_file=$(mktemp)
-    grep -v "\"$account_name\":" "$ACCOUNTS_FILE" > "$temp_file"
+    # SECURITY FIX (MEDIUM-001): Secure temp file handling
+    local temp_file
+    temp_file=$(mktemp -t ccm_delete.XXXXXX) || return 1
+    chmod 600 "$temp_file"
+    trap 'rm -f "$temp_file" 2>/dev/null' RETURN
+
+    grep -v "\"$escaped_name\":" "$ACCOUNTS_FILE" > "$temp_file"
 
     # 清理可能的逗号问题
     sed -i '' 's/,\s*}/}/g' "$temp_file" 2>/dev/null || sed -i 's/,\s*}/}/g' "$temp_file"
@@ -623,8 +755,80 @@ delete_account() {
     echo -e "${GREEN}✅ $(t 'account_deleted'): $account_name${NC}"
 }
 
+# 重命名已保存的账号
+rename_account() {
+    # 检查是否需要禁用颜色（用于 eval）
+    if [[ "$NO_COLOR" == "true" ]]; then
+        set_no_color
+    fi
+
+    local old_name="$1"
+    local new_name="$2"
+
+    if [[ -z "$old_name" || -z "$new_name" ]]; then
+        echo -e "${RED}❌ $(t 'account_name_required')${NC}" >&2
+        echo -e "${YELLOW}💡 $(t 'usage'): ccm rename-account <old-name> <new-name>${NC}" >&2
+        return 1
+    fi
+
+    # SECURITY FIX (HIGH-002): Validate both account names
+    if ! validate_account_name "$old_name"; then
+        return 1
+    fi
+    if ! validate_account_name "$new_name"; then
+        return 1
+    fi
+
+    if [[ "$old_name" == "$new_name" ]]; then
+        echo -e "${RED}❌ $(t 'old_and_new_name_same')${NC}" >&2
+        return 1
+    fi
+
+    if [[ ! -f "$ACCOUNTS_FILE" ]]; then
+        echo -e "${RED}❌ $(t 'no_accounts_found')${NC}" >&2
+        return 1
+    fi
+
+    # Use escaped names for regex to handle dots and special chars
+    local escaped_old_name escaped_new_name
+    escaped_old_name=$(escape_for_regex "$old_name")
+    escaped_new_name=$(escape_for_regex "$new_name")
+
+    # 检查旧账号是否存在
+    if ! grep -q "\"$escaped_old_name\":" "$ACCOUNTS_FILE"; then
+        echo -e "${RED}❌ $(t 'account_not_found'): $old_name${NC}" >&2
+        return 1
+    fi
+
+    # 检查新账号名是否已存在
+    if grep -q "\"$escaped_new_name\":" "$ACCOUNTS_FILE"; then
+        echo -e "${RED}❌ $(t 'account_already_exists'): $new_name${NC}" >&2
+        return 1
+    fi
+
+    # 重命名账号（使用临时文件）
+    # SECURITY FIX (MEDIUM-001): Secure temp file handling
+    local temp_file
+    temp_file=$(mktemp -t ccm_rename.XXXXXX) || return 1
+    chmod 600 "$temp_file"
+    trap 'rm -f "$temp_file" 2>/dev/null' RETURN
+
+    # 使用sed替换账号名（处理JSON格式）
+    sed "s/\"$escaped_old_name\":/\"$new_name\":/" "$ACCOUNTS_FILE" > "$temp_file"
+
+    mv "$temp_file" "$ACCOUNTS_FILE"
+    chmod 600 "$ACCOUNTS_FILE"
+
+    echo -e "${GREEN}✅ $(t 'account_renamed'): $old_name → $new_name${NC}"
+}
+
 # 显示当前账号信息
 get_current_account() {
+    # 检查是否需要禁用颜色（用于 eval）
+    if [[ "$NO_COLOR" == "true" ]]; then
+        set_no_color
+    fi
+
     local credentials=$(read_keychain_credentials)
 
     if [[ -z "$credentials" ]]; then
@@ -635,12 +839,12 @@ get_current_account() {
 
     # 提取信息
     local subscription=$(echo "$credentials" | grep -o '"subscriptionType":"[^"]*"' | cut -d'"' -f4)
-    local expires=$(echo "$credentials" | grep -o '"expiresAt":[0-9]*' | cut -d':' -f2)
+    local expires=$(echo "$credentials" | grep -o '"expiresAt":[0-9]*' | cut -d':' -f2 | tr -d ' \n')
     local access_token=$(echo "$credentials" | grep -o '"accessToken":"[^"]*"' | cut -d'"' -f4)
 
     # 格式化过期时间
     local expires_str=""
-    if [[ -n "$expires" ]]; then
+    if [[ -n "$expires" && "$expires" =~ ^[0-9]+$ ]]; then
         expires_str=$(date -r $((expires / 1000)) "+%Y-%m-%d %H:%M" 2>/dev/null || echo "Unknown")
     fi
 
@@ -1054,7 +1258,14 @@ switch_to_ppinfra() {
 
     # 清理旧环境变量（关键：避免认证冲突）
     echo "unset ANTHROPIC_BASE_URL ANTHROPIC_API_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_MODEL ANTHROPIC_SMALL_FAST_MODEL API_TIMEOUT_MS CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
-    
+
+    # SECURITY FIX (MEDIUM-002): Emit common config sourcing and validation once
+    # This ensures PPINFRA_API_KEY is loaded and validated when eval'd
+    echo "# Load PPINFRA_API_KEY from config if not set in environment"
+    echo "if [ -z \"\${PPINFRA_API_KEY}\" ] && [ -f \"\$HOME/.ccm_config\" ]; then . \"\$HOME/.ccm_config\" >/dev/null 2>&1; fi"
+    echo "if [ -z \"\${PPINFRA_API_KEY}\" ]; then echo 'Error: PPINFRA_API_KEY not configured' >&2; return 1 2>/dev/null || exit 1; fi"
+    echo "export ANTHROPIC_AUTH_TOKEN=\"\${PPINFRA_API_KEY}\""
+
     # 根据目标模型输出PPINFRA配置的export语句
     case "$target" in
         "deepseek"|"ds")
@@ -1066,7 +1277,6 @@ switch_to_ppinfra() {
             fi
             echo "export ANTHROPIC_BASE_URL='https://api.ppinfra.com/anthropic'"
             echo "export ANTHROPIC_API_URL='https://api.ppinfra.com/anthropic'"
-            echo "export ANTHROPIC_AUTH_TOKEN='$ppinfra_key'"
             echo "export ANTHROPIC_MODEL='deepseek/deepseek-v3.2-exp'"
             echo "export ANTHROPIC_SMALL_FAST_MODEL='deepseek/deepseek-v3.2-exp'"
             ;;
@@ -1078,7 +1288,6 @@ switch_to_ppinfra() {
             fi
             echo "export ANTHROPIC_BASE_URL='https://api.ppinfra.com/anthropic'"
             echo "export ANTHROPIC_API_URL='https://api.ppinfra.com/anthropic'"
-            echo "export ANTHROPIC_AUTH_TOKEN='$ppinfra_key'"
             echo "export ANTHROPIC_MODEL='zai-org/glm-4.6'"
             echo "export ANTHROPIC_SMALL_FAST_MODEL='zai-org/glm-4.6'"
             ;;
@@ -1090,7 +1299,6 @@ switch_to_ppinfra() {
             fi
             echo "export ANTHROPIC_BASE_URL='https://api.ppinfra.com/anthropic'"
             echo "export ANTHROPIC_API_URL='https://api.ppinfra.com/anthropic'"
-            echo "export ANTHROPIC_AUTH_TOKEN='$ppinfra_key'"
             echo "export ANTHROPIC_MODEL='moonshotai/kimi-k2-thinking'"
             echo "export ANTHROPIC_SMALL_FAST_MODEL='moonshotai/kimi-k2-thinking'"
             ;;
@@ -1102,7 +1310,6 @@ switch_to_ppinfra() {
             fi
             echo "export ANTHROPIC_BASE_URL='https://api.ppinfra.com/anthropic'"
             echo "export ANTHROPIC_API_URL='https://api.ppinfra.com/anthropic'"
-            echo "export ANTHROPIC_AUTH_TOKEN='$ppinfra_key'"
             echo "export ANTHROPIC_MODEL='moonshotai/kimi-k2-thinking'"
             echo "export ANTHROPIC_SMALL_FAST_MODEL='moonshotai/kimi-k2-thinking'"
             ;;
@@ -1114,7 +1321,6 @@ switch_to_ppinfra() {
             fi
             echo "export ANTHROPIC_BASE_URL='https://api.ppinfra.com/anthropic'"
             echo "export ANTHROPIC_API_URL='https://api.ppinfra.com/anthropic'"
-            echo "export ANTHROPIC_AUTH_TOKEN='$ppinfra_key'"
             echo "export ANTHROPIC_MODEL='qwen3-next-80b-a3b-thinking'"
             echo "export ANTHROPIC_SMALL_FAST_MODEL='qwen3-next-80b-a3b-thinking'"
             ;;
@@ -1126,7 +1332,6 @@ switch_to_ppinfra() {
             fi
             echo "export ANTHROPIC_BASE_URL='https://api.ppinfra.com/anthropic'"
             echo "export ANTHROPIC_API_URL='https://api.ppinfra.com/anthropic'"
-            echo "export ANTHROPIC_AUTH_TOKEN='$ppinfra_key'"
             echo "export ANTHROPIC_MODEL='minimax/minimax-m2'"
             echo "export ANTHROPIC_SMALL_FAST_MODEL='minimax/minimax-m2'"
             ;;
@@ -1167,11 +1372,12 @@ show_help() {
     echo "  haiku, h           - env haiku"
     echo ""
     echo -e "${YELLOW}Claude Pro Account Management:${NC}"
-    echo "  save-account <name>     - Save current Claude Pro account"
-    echo "  switch-account <name>   - Switch to saved account"
-    echo "  list-accounts           - List all saved accounts"
-    echo "  delete-account <name>   - Delete saved account"
-    echo "  current-account         - Show current account info"
+    echo "  save-account <name>        - Save current Claude Pro account"
+    echo "  switch-account <name>      - Switch to saved account"
+    echo "  list-accounts              - List all saved accounts"
+    echo "  delete-account <name>      - Delete saved account"
+    echo "  rename-account <old> <new> - Rename saved account"
+    echo "  current-account            - Show current account info"
     echo "  claude:account         - Switch account and use Claude (Sonnet)"
     echo "  opus:account           - Switch account and use Opus model"
     echo "  haiku:account          - Switch account and use Haiku model"
@@ -1638,6 +1844,10 @@ main() {
             shift
             delete_account "$1"
             ;;
+        "rename-account")
+            shift
+            rename_account "$1" "$2"
+            ;;
         "current-account")
             get_current_account
             ;;
@@ -1701,7 +1911,8 @@ main() {
             show_help
             ;;
         *)
-            echo -e "${RED}❌ $(t 'unknown_option'): $1${NC}" >&2
+            # SECURITY FIX (LOW-002): Sanitize user input before displaying
+            echo -e "${RED}❌ $(t 'unknown_option'): $(sanitize_for_display "$1")${NC}" >&2
             echo "" >&2
             show_help >&2
             return 1
