@@ -418,6 +418,9 @@ validate_account_name() {
     return 0
 }
 
+# Global variable to store the keychain account name
+KEYCHAIN_ACCOUNT=""
+
 # 从 macOS Keychain 读取 Claude Code 凭证
 read_keychain_credentials() {
     local credentials
@@ -432,6 +435,10 @@ read_keychain_credentials() {
         credentials=$(security find-generic-password -s "$svc" -w 2>/dev/null)
         if [[ $? -eq 0 && -n "$credentials" ]]; then
             KEYCHAIN_SERVICE="$svc"
+            # Capture the account name from the keychain entry
+            KEYCHAIN_ACCOUNT=$(security find-generic-password -s "$svc" 2>/dev/null | grep '"acct"<blob>=' | sed 's/.*"acct"<blob>="\([^"]*\)".*/\1/' | tr -d '[:space:]' | head -1)
+            # If no account found, default to current user
+            [[ -z "$KEYCHAIN_ACCOUNT" ]] && KEYCHAIN_ACCOUNT="$USER"
             echo "$credentials"
             return 0
         fi
@@ -443,22 +450,58 @@ read_keychain_credentials() {
 # 写入凭证到 macOS Keychain
 write_keychain_credentials() {
     local credentials="$1"
-    local username="$USER"
+    # Use the captured account name, or default to current user
+    local username="${KEYCHAIN_ACCOUNT:-$USER}"
 
-    # 先删除现有的凭证
-    security delete-generic-password -s "$KEYCHAIN_SERVICE" >/dev/null 2>&1
+    # 先删除现有的凭证 (use both account and service to target exact entry)
+    security delete-generic-password -a "$username" -s "$KEYCHAIN_SERVICE" >/dev/null 2>&1
 
     # 添加新凭证
     security add-generic-password -a "$username" -s "$KEYCHAIN_SERVICE" -w "$credentials" >/dev/null 2>&1
     local result=$?
 
     if [[ $result -eq 0 ]]; then
-        echo -e "${BLUE}🔑 凭证已写入 Keychain${NC}" >&2
+        echo -e "${BLUE}🔑 凭证已写入 Keychain (account: $username)${NC}" >&2
     else
         echo -e "${RED}❌ 凭证写入 Keychain 失败 (错误码: $result)${NC}" >&2
     fi
 
     return $result
+}
+
+# Clear cached oauthAccount from ~/.claude.json to force fresh user data fetch
+clear_oauth_account_cache() {
+    local claude_json="$HOME/.claude.json"
+
+    if [[ ! -f "$claude_json" ]]; then
+        return 0
+    fi
+
+    # Check if python3 is available
+    if ! command -v python3 &>/dev/null; then
+        echo -e "${YELLOW}⚠️  python3 not found, cannot clear oauth cache${NC}" >&2
+        return 1
+    fi
+
+    # Remove oauthAccount field from the JSON
+    python3 -c "
+import json
+import sys
+
+try:
+    with open('$claude_json', 'r') as f:
+        data = json.load(f)
+
+    if 'oauthAccount' in data:
+        del data['oauthAccount']
+        with open('$claude_json', 'w') as f:
+            json.dump(data, f, indent=2)
+        print('oauthAccount cache cleared', file=sys.stderr)
+except Exception as e:
+    print(f'Warning: Could not clear oauth cache: {e}', file=sys.stderr)
+" 2>&1 | while read line; do echo -e "${BLUE}🔄 $line${NC}" >&2; done
+
+    return 0
 }
 
 # 调试函数：验证 Keychain 中的凭证
@@ -470,7 +513,11 @@ debug_keychain_credentials() {
 
     echo -e "${BLUE}🔍 调试：检查 Keychain 中的凭证${NC}"
 
-    local credentials=$(read_keychain_credentials)
+    # Call read_keychain_credentials and capture output without subshell losing KEYCHAIN_ACCOUNT
+    local credentials
+    credentials=$(read_keychain_credentials)
+    # Re-read to set global KEYCHAIN_ACCOUNT (subshell loses it)
+    read_keychain_credentials >/dev/null 2>&1
     if [[ -z "$credentials" ]]; then
         echo -e "${RED}❌ Keychain 中没有凭证${NC}"
         return 1
@@ -478,11 +525,12 @@ debug_keychain_credentials() {
 
     # 提取凭证信息
     local subscription=$(echo "$credentials" | grep -o '"subscriptionType":"[^"]*"' | cut -d'"' -f4)
-    local expires=$(echo "$credentials" | grep -o '"expiresAt":[0-9]*' | cut -d':' -f2)
+    local expires=$(echo "$credentials" | grep -o '"expiresAt":[0-9]*' | head -1 | cut -d':' -f2 | tr -d '[:space:]')
     local access_token_preview=$(echo "$credentials" | grep -o '"accessToken":"[^"]*"' | cut -d'"' -f4 | head -c 20)
 
     echo -e "${GREEN}✅ 找到凭证：${NC}"
     echo "   服务名: $KEYCHAIN_SERVICE"
+    echo "   账户名: ${KEYCHAIN_ACCOUNT:-Unknown}"
     echo "   订阅类型: ${subscription:-Unknown}"
     if [[ -n "$expires" ]]; then
         local expires_str=$(date -r $((expires / 1000)) "+%Y-%m-%d %H:%M" 2>/dev/null || echo "Unknown")
@@ -582,9 +630,10 @@ EOF
             local encoded_creds=$(echo "$credentials" | base64)
             # 移除最后的 } (使用 macOS 兼容的命令)
             sed '$d' "$ACCOUNTS_FILE" > "$temp_file"
-            # 检查是否需要添加逗号
+            # 检查是否需要添加逗号（追加到上一行末尾，不是新行）
             if grep -q '"' "$temp_file"; then
-                echo "," >> "$temp_file"
+                # Append comma to the last line of existing entries
+                sed -i '' '$ s/$/,/' "$temp_file"
             fi
             echo "  \"$account_name\": \"$encoded_creds\"" >> "$temp_file"
             echo "}" >> "$temp_file"
@@ -642,8 +691,13 @@ switch_account() {
     # 解码凭证
     local credentials=$(echo "$encoded_creds" | base64 -d)
 
+    # 先读取当前凭证，获取 keychain 账户名
+    read_keychain_credentials >/dev/null 2>&1
+
     # 写入 Keychain
     if write_keychain_credentials "$credentials"; then
+        # Clear cached oauthAccount in ~/.claude.json to force fresh fetch
+        clear_oauth_account_cache
         echo -e "${GREEN}✅ $(t 'account_switched'): $account_name${NC}"
         echo -e "${YELLOW}⚠️  $(t 'please_restart_claude_code')${NC}"
     else
