@@ -1,24 +1,24 @@
 #!/bin/bash
 ############################################################
-# Claude Code Model Switcher (ccm) - 独立版本
+# Claude Code Model Switcher (ccm) - Standalone Version
 # ---------------------------------------------------------
-# 功能: 在不同AI模型之间快速切换
-# 支持: Claude, Deepseek, GLM4.6, KIMI2
-# 作者: Peng
-# 版本: 2.2.0
+# Function: Quickly switch between different AI models
+# Supports: Claude, Deepseek, GLM4.6, KIMI2
+# Author: Peng
+# Version: 2.2.0
 ############################################################
 
-# 脚本颜色定义
+# Script color definitions
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# 颜色控制（用于账号管理命令的输出）
+# Color control (for account management command output)
 NO_COLOR=${NO_COLOR:-false}
 
-# 根据NO_COLOR设置颜色（账号管理函数使用）
+# Set colors based on NO_COLOR (used by account management functions)
 set_no_color() {
     if [[ "$NO_COLOR" == "true" ]]; then
         RED=''
@@ -29,17 +29,17 @@ set_no_color() {
     fi
 }
 
-# 配置文件路径
+# Config file paths
 CONFIG_FILE="$HOME/.ccm_config"
 ACCOUNTS_FILE="$HOME/.ccm_accounts"
 # Keychain service name (override with CCM_KEYCHAIN_SERVICE)
 KEYCHAIN_SERVICE="${CCM_KEYCHAIN_SERVICE:-Claude Code-credentials}"
 
-# 多语言支持
+# Multi-language support
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 LANG_DIR="$SCRIPT_DIR/lang"
 
-# 加载翻译
+# Load translations
 load_translations() {
     local lang_code="${1:-en}"
 
@@ -51,21 +51,21 @@ load_translations() {
 
     local lang_file="$LANG_DIR/${lang_code}.json"
 
-    # 如果语言文件不存在，默认使用英语
+    # If language file doesn't exist, default to English
     if [[ ! -f "$lang_file" ]]; then
         lang_code="en"
         lang_file="$LANG_DIR/en.json"
     fi
 
-    # 如果英语文件也不存在，使用内置英文
+    # If English file also doesn't exist, use built-in English
     if [[ ! -f "$lang_file" ]]; then
         return 0
     fi
 
-    # 清理现有翻译变量
+    # Clean existing translation variables
     unset $(set | grep '^TRANS_' | LC_ALL=C cut -d= -f1) 2>/dev/null || true
 
-    # 读取JSON文件并解析到变量
+    # Read JSON file and parse into variables
     if [[ -f "$lang_file" ]]; then
         local temp_file
         temp_file=$(mktemp -t ccm_trans.XXXXXX) || return 1
@@ -73,29 +73,28 @@ load_translations() {
         # Ensure cleanup on exit/interrupt
         trap 'rm -f "$temp_file" 2>/dev/null' RETURN
 
-        # 提取键值对到临时文件，使用更健壮的方法
+        # Extract key-value pairs to temp file using robust method
         grep -o '"[^"]*":[[:space:]]*"[^"]*"' "$lang_file" | sed 's/^"\([^"]*\)":[[:space:]]*"\([^"]*\)"$/\1|\2/' > "$temp_file"
 
-        # 读取临时文件并设置变量（使用TRANS_前缀）
+        # Read temp file and set variables (using TRANS_ prefix)
         while IFS='|' read -r key value; do
             if [[ -n "$key" && -n "$value" ]]; then
                 # SECURITY FIX (HIGH-001): Validate key contains only safe characters
                 if [[ ! "$key" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
                     continue  # Skip invalid keys
                 fi
-                # 处理转义字符
+                # Process escape characters
                 value="${value//\\\"/\"}"
                 value="${value//\\\\/\\}"
                 # Use printf and declare for safer variable assignment (avoid eval injection)
                 printf -v "TRANS_${key}" '%s' "$value"
             fi
         done < "$temp_file"
-
-        rm -f "$temp_file"
+        # Note: temp_file cleanup handled by trap on RETURN
     fi
 }
 
-# 获取翻译文本
+# Get translated text
 t() {
     local key="$1"
     local default="${2:-$key}"
@@ -110,9 +109,9 @@ t() {
     echo "${value:-$default}"
 }
 
-# 检测系统语言
+# Detect system language
 detect_language() {
-    # 首先检查环境变量LANG
+    # First check LANG environment variable
     local sys_lang="${LANG:-}"
     if [[ "$sys_lang" =~ ^zh ]]; then
         echo "zh"
@@ -121,47 +120,47 @@ detect_language() {
     fi
 }
 
-# 智能加载配置：环境变量优先，配置文件补充
+# Smart config loading: environment variables take priority, config file supplements
 load_config() {
-    # 初始化语言
+    # Initialize language
     local lang_preference="${CCM_LANGUAGE:-$(detect_language)}"
     load_translations "$lang_preference"
 
-    # 创建配置文件（如果不存在）
+    # Create config file (if not exists)
     if [[ ! -f "$CONFIG_FILE" ]]; then
         cat > "$CONFIG_FILE" << 'EOF'
-# CCM 配置文件
-# 请替换为你的实际API密钥
-# 注意：环境变量中的API密钥优先级高于此文件
+# CCM Configuration File
+# Please replace with your actual API keys
+# Note: API keys in environment variables take priority over this file
 
-# 语言设置 (en: English, zh: 中文)
+# Language setting (en: English, zh: Chinese)
 CCM_LANGUAGE=en
 
 # Deepseek
 DEEPSEEK_API_KEY=sk-your-deepseek-api-key
 
-# GLM4.6 (智谱清言)
+# GLM4.6 (Zhipu)
 GLM_API_KEY=your-glm-api-key
 
-# KIMI for Coding (月之暗面)
+# KIMI for Coding (Moonshot)
 KIMI_API_KEY=your-kimi-api-key
 
-# LongCat（美团）
+# LongCat (Meituan)
 LONGCAT_API_KEY=your-longcat-api-key
 
 # MiniMax M2
 MINIMAX_API_KEY=your-minimax-api-key
 
-# 豆包 Seed-Code (字节跳动)
+# Doubao Seed-Code (ByteDance)
 ARK_API_KEY=your-ark-api-key
 
-# Qwen（阿里云 DashScope）
+# Qwen (Alibaba DashScope)
 QWEN_API_KEY=your-qwen-api-key
 
-# Claude (如果使用API key而非Pro订阅)
+# Claude (if using API key instead of Pro subscription)
 CLAUDE_API_KEY=your-claude-api-key
 
-# —— 可选：模型ID覆盖（不设置则使用下方默认）——
+# -- Optional: Model ID overrides (defaults below if not set) --
 DEEPSEEK_MODEL=deepseek-chat
 DEEPSEEK_SMALL_FAST_MODEL=deepseek-chat
 KIMI_MODEL=kimi-for-coding
@@ -194,7 +193,7 @@ EOF
         # Don't return 1 - continue with default fallback keys
     fi
 
-    # 首先读取语言设置
+    # First read language setting
     if [[ -f "$CONFIG_FILE" ]]; then
         local config_lang
         config_lang=$(grep -E "^[[:space:]]*CCM_LANGUAGE[[:space:]]*=" "$CONFIG_FILE" 2>/dev/null | head -1 | LC_ALL=C cut -d'=' -f2- | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
@@ -205,7 +204,7 @@ EOF
         fi
     fi
 
-    # 智能加载：只有环境变量未设置的键才从配置文件读取
+    # Smart loading: only load from config file if env var not set
     # SECURITY FIX (MEDIUM-001): Secure temp file handling
     local temp_file
     temp_file=$(mktemp -t ccm_config.XXXXXX) || return 1
@@ -214,28 +213,28 @@ EOF
 
     local raw
     while IFS= read -r raw || [[ -n "$raw" ]]; do
-        # 去掉回车、去掉行内注释并修剪两端空白
+        # Remove carriage return, inline comments and trim whitespace
         raw=${raw%$'\r'}
-        # 跳过注释和空行
+        # Skip comments and empty lines
         [[ "$raw" =~ ^[[:space:]]*# ]] && continue
         [[ -z "$raw" ]] && continue
-        # 删除行内注释（从第一个 # 起）
+        # Remove inline comments (from first #)
         local line="${raw%%#*}"
-        # 去掉首尾空白
+        # Trim leading/trailing whitespace
         line=$(echo "$line" | sed -E 's/^[[:space:]]*//; s/[[:space:]]*$//')
         [[ -z "$line" ]] && continue
 
-        # 解析 export KEY=VALUE 或 KEY=VALUE
+        # Parse export KEY=VALUE or KEY=VALUE
         if [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
             local key="${BASH_REMATCH[2]}"
             local value="${BASH_REMATCH[3]}"
-            # 去掉首尾空白
+            # Trim leading/trailing whitespace
             value=$(echo "$value" | sed -E 's/^[[:space:]]*//; s/[[:space:]]*$//')
-            # 仅当环境未设置、为空或为占位符时才应用
+            # Only apply if env not set, empty, or placeholder
             local env_value="${!key}"
             local lower_env_value
             lower_env_value=$(printf '%s' "$env_value" | tr '[:upper:]' '[:lower:]')
-            # 检查是否为占位符值
+            # Check if placeholder value
             local is_placeholder=false
             if [[ "$lower_env_value" == *"your"* && "$lower_env_value" == *"api"* && "$lower_env_value" == *"key"* ]]; then
                 is_placeholder=true
@@ -246,48 +245,48 @@ EOF
         fi
     done < "$CONFIG_FILE"
 
-    # 执行临时文件中的export语句
+    # Execute export statements from temp file
     if [[ -s "$temp_file" ]]; then
         source "$temp_file"
     fi
     # Note: temp_file cleanup handled by RETURN trap
 }
 
-# 创建默认配置文件
+# Create default config file
 create_default_config() {
     cat > "$CONFIG_FILE" << 'EOF'
-# CCM 配置文件
-# 请替换为你的实际API密钥
-# 注意：环境变量中的API密钥优先级高于此文件
+# CCM Configuration File
+# Please replace with your actual API keys
+# Note: API keys in environment variables take priority over this file
 
-# 语言设置 (en: English, zh: 中文)
+# Language setting (en: English, zh: Chinese)
 CCM_LANGUAGE=en
 
 # Deepseek
 DEEPSEEK_API_KEY=sk-your-deepseek-api-key
 
-# GLM4.6 (智谱清言)
+# GLM4.6 (Zhipu)
 GLM_API_KEY=your-glm-api-key
 
-# KIMI for Coding (月之暗面)
+# KIMI for Coding (Moonshot)
 KIMI_API_KEY=your-kimi-api-key
 
-# LongCat（美团）
+# LongCat (Meituan)
 LONGCAT_API_KEY=your-longcat-api-key
 
 # MiniMax M2
 MINIMAX_API_KEY=your-minimax-api-key
 
-# 豆包 Seed-Code (字节跳动)
+# Doubao Seed-Code (ByteDance)
 ARK_API_KEY=your-ark-api-key
 
-# Qwen（阿里云 DashScope）
+# Qwen (Alibaba DashScope)
 QWEN_API_KEY=your-qwen-api-key
 
-# Claude (如果使用API key而非Pro订阅)
+# Claude (if using API key instead of Pro subscription)
 CLAUDE_API_KEY=your-claude-api-key
 
-# —— 可选：模型ID覆盖（不设置则使用下方默认）——
+# -- Optional: Model ID overrides (defaults below if not set) --
 DEEPSEEK_MODEL=deepseek-chat
 DEEPSEEK_SMALL_FAST_MODEL=deepseek-chat
 KIMI_MODEL=kimi-for-coding
@@ -318,7 +317,7 @@ EOF
     echo -e "${YELLOW}   $(t 'edit_file_to_add_keys')${NC}" >&2
 }
 
-# 判断值是否为有效（非空且非占位符）
+# Check if value is valid (non-empty and not placeholder)
 is_effectively_set() {
     local v="$1"
     if [[ -z "$v" ]]; then
@@ -336,7 +335,7 @@ is_effectively_set() {
     esac
 }
 
-# 安全掩码工具
+# Secure masking utility
 mask_token() {
     local t="$1"
     local n=${#t}
@@ -461,15 +460,34 @@ write_keychain_credentials() {
     local result=$?
 
     if [[ $result -eq 0 ]]; then
-        echo -e "${BLUE}🔑 凭证已写入 Keychain (account: $username)${NC}" >&2
+        echo -e "${BLUE}🔑 Credentials written to Keychain (account: $username)${NC}" >&2
     else
-        echo -e "${RED}❌ 凭证写入 Keychain 失败 (错误码: $result)${NC}" >&2
+        echo -e "${RED}❌ Failed to write credentials to Keychain (error code: $result)${NC}" >&2
+        echo -e "${YELLOW}💡 Try: security unlock-keychain login.keychain-db${NC}" >&2
+        echo -e "${YELLOW}💡 Or check: Keychain Access app → login keychain → right-click → Change Settings${NC}" >&2
     fi
 
     return $result
 }
 
 # Clear cached oauthAccount from ~/.claude.json to force fresh user data fetch
+#
+# Why this is needed:
+#   Claude Code caches the user's OAuth account info (email, organization) in ~/.claude.json
+#   under the "oauthAccount" key. When switching between accounts, the keychain credentials
+#   are updated, but Claude Code continues to display the old cached user info until restart.
+#   By clearing this cache, we force Claude Code to fetch fresh user data on next launch.
+#
+# What triggers cache creation:
+#   Claude Code creates this cache when it first authenticates with a Claude Pro account.
+#   The cache persists across sessions until explicitly cleared or the file is deleted.
+#
+# Edge cases handled:
+#   - File doesn't exist: Returns success (nothing to clear)
+#   - python3 not available: Returns error with warning
+#   - File is locked/read-only: Python will raise exception, caught and logged
+#   - Malformed JSON: Python will raise exception, caught and logged
+#
 clear_oauth_account_cache() {
     local claude_json="$HOME/.claude.json"
 
@@ -484,24 +502,33 @@ clear_oauth_account_cache() {
     fi
 
     # Remove oauthAccount field from the JSON
-    python3 -c "
+    # Pass path as argument to avoid shell variable injection into Python code
+    local py_output
+    py_output=$(python3 - "$claude_json" << 'PYEOF'
 import json
 import sys
 
 try:
-    with open('$claude_json', 'r') as f:
+    claude_json = sys.argv[1]
+    with open(claude_json, 'r') as f:
         data = json.load(f)
 
     if 'oauthAccount' in data:
         del data['oauthAccount']
-        with open('$claude_json', 'w') as f:
+        with open(claude_json, 'w') as f:
             json.dump(data, f, indent=2)
         print('oauthAccount cache cleared', file=sys.stderr)
 except Exception as e:
     print(f'Warning: Could not clear oauth cache: {e}', file=sys.stderr)
-" 2>&1 | while read line; do echo -e "${BLUE}🔄 $line${NC}" >&2; done
+PYEOF
+2>&1)
+    local py_exit=$?
 
-    return 0
+    if [[ -n "$py_output" ]]; then
+        echo -e "${BLUE}🔄 $py_output${NC}" >&2
+    fi
+
+    return $py_exit
 }
 
 # 调试函数：验证 Keychain 中的凭证
@@ -511,7 +538,7 @@ debug_keychain_credentials() {
         set_no_color
     fi
 
-    echo -e "${BLUE}🔍 调试：检查 Keychain 中的凭证${NC}"
+    echo -e "${BLUE}🔍 Debug: Checking Keychain credentials${NC}"
 
     # Call read_keychain_credentials and capture output without subshell losing KEYCHAIN_ACCOUNT
     local credentials
@@ -519,7 +546,7 @@ debug_keychain_credentials() {
     # Re-read to set global KEYCHAIN_ACCOUNT (subshell loses it)
     read_keychain_credentials >/dev/null 2>&1
     if [[ -z "$credentials" ]]; then
-        echo -e "${RED}❌ Keychain 中没有凭证${NC}"
+        echo -e "${RED}❌ No credentials in Keychain${NC}"
         return 1
     fi
 
@@ -528,29 +555,29 @@ debug_keychain_credentials() {
     local expires=$(echo "$credentials" | grep -o '"expiresAt":[0-9]*' | head -1 | cut -d':' -f2 | tr -d '[:space:]')
     local access_token_preview=$(echo "$credentials" | grep -o '"accessToken":"[^"]*"' | cut -d'"' -f4 | head -c 20)
 
-    echo -e "${GREEN}✅ 找到凭证：${NC}"
-    echo "   服务名: $KEYCHAIN_SERVICE"
-    echo "   账户名: ${KEYCHAIN_ACCOUNT:-Unknown}"
-    echo "   订阅类型: ${subscription:-Unknown}"
+    echo -e "${GREEN}✅ Credentials found:${NC}"
+    echo "   Service: $KEYCHAIN_SERVICE"
+    echo "   Account: ${KEYCHAIN_ACCOUNT:-Unknown}"
+    echo "   Subscription: ${subscription:-Unknown}"
     if [[ -n "$expires" ]]; then
         local expires_str=$(date -r $((expires / 1000)) "+%Y-%m-%d %H:%M" 2>/dev/null || echo "Unknown")
-        echo "   过期时间: $expires_str"
+        echo "   Expires: $expires_str"
     fi
-    echo "   Token 预览: ${access_token_preview}..."
+    echo "   Token preview: ${access_token_preview}..."
 
-    # 尝试匹配保存的账号
+    # Trying to match saved accounts
     if [[ -f "$ACCOUNTS_FILE" ]]; then
-        echo -e "${BLUE}🔍 尝试匹配保存的账号...${NC}"
+        echo -e "${BLUE}🔍 Trying to match saved accounts...${NC}"
         while IFS=': ' read -r name encoded; do
             name=$(echo "$name" | tr -d '"')
             encoded=$(echo "$encoded" | tr -d '"')
             local saved_creds=$(echo "$encoded" | base64 -d 2>/dev/null)
             if [[ "$saved_creds" == "$credentials" ]]; then
-                echo -e "${GREEN}✅ 匹配到账号: $name${NC}"
+                echo -e "${GREEN}✅ Matched account: $name${NC}"
                 return 0
             fi
         done < <(grep --color=never -o '"[^"]*": *"[^"]*"' "$ACCOUNTS_FILE")
-        echo -e "${YELLOW}⚠️  没有匹配到任何保存的账号${NC}"
+        echo -e "${YELLOW}⚠️  No matching saved account found${NC}"
     fi
 }
 
@@ -647,8 +674,7 @@ EOF
     local subscription_type=$(echo "$credentials" | grep -o '"subscriptionType":"[^"]*"' | cut -d'"' -f4)
     echo -e "${GREEN}✅ $(t 'account_saved'): $account_name${NC}"
     echo -e "   $(t 'subscription_type'): ${subscription_type:-Unknown}"
-
-    rm -f "$temp_file"
+    # Note: temp_file cleanup handled by trap on RETURN
 }
 
 # 切换到指定账号
@@ -691,8 +717,14 @@ switch_account() {
     # 解码凭证
     local credentials=$(echo "$encoded_creds" | base64 -d)
 
-    # 先读取当前凭证，获取 keychain 账户名
-    read_keychain_credentials >/dev/null 2>&1
+    # Read current credentials to get keychain account name
+    # If no existing credentials or read fails, default to current user
+    if ! read_keychain_credentials >/dev/null 2>&1; then
+        KEYCHAIN_ACCOUNT="$USER"
+    fi
+    if [[ -z "$KEYCHAIN_ACCOUNT" ]]; then
+        KEYCHAIN_ACCOUNT="$USER"
+    fi
 
     # 写入 Keychain
     if write_keychain_credentials "$credentials"; then
@@ -966,6 +998,8 @@ switch_to_deepseek() {
         echo -e "${GREEN}✅ $(t 'switched_to') Deepseek（$(t 'official')）${NC}"
     else
         echo -e "${RED}❌ Please configure DEEPSEEK_API_KEY${NC}"
+        echo -e "${YELLOW}💡 Run: ccm config  # Then add your API key${NC}"
+        echo -e "${YELLOW}💡 Or:  export DEEPSEEK_API_KEY=your-key${NC}"
         return 1
     fi
     echo "   BASE_URL: $ANTHROPIC_BASE_URL"
@@ -976,11 +1010,11 @@ switch_to_deepseek() {
 switch_to_claude() {
     local account_name="$1"
 
-    echo -e "${YELLOW}🔄 切换到 Claude Sonnet 4.5...${NC}"
+    echo -e "${YELLOW}🔄 Switching to Claude Sonnet 4.5...${NC}"
 
     # 如果指定了账号，先切换账号
     if [[ -n "$account_name" ]]; then
-        echo -e "${BLUE}📝 切换到账号: $account_name${NC}"
+        echo -e "${BLUE}📝 Switching to account: $account_name${NC}"
         if ! switch_account "$account_name"; then
             return 1
         fi
@@ -989,7 +1023,7 @@ switch_to_claude() {
     clean_env
     export ANTHROPIC_MODEL="${CLAUDE_MODEL:-claude-sonnet-4-5-20250929}"
     export ANTHROPIC_SMALL_FAST_MODEL="${CLAUDE_SMALL_FAST_MODEL:-claude-sonnet-4-5-20250929}"
-    echo -e "${GREEN}✅ 已切换到 Claude Sonnet 4.5 (使用 Claude Pro 订阅)${NC}"
+    echo -e "${GREEN}✅ Switched to Claude Sonnet 4.5 (using Claude Pro subscription)${NC}"
     if [[ -n "$account_name" ]]; then
         echo "   $(t 'account'): $account_name"
     fi
@@ -1005,7 +1039,7 @@ switch_to_opus() {
 
     # 如果指定了账号，先切换账号
     if [[ -n "$account_name" ]]; then
-        echo -e "${BLUE}📝 切换到账号: $account_name${NC}"
+        echo -e "${BLUE}📝 Switching to account: $account_name${NC}"
         if ! switch_account "$account_name"; then
             return 1
         fi
@@ -1014,7 +1048,7 @@ switch_to_opus() {
     clean_env
     export ANTHROPIC_MODEL="${OPUS_MODEL:-claude-opus-4-5-20251101}"
     export ANTHROPIC_SMALL_FAST_MODEL="${OPUS_SMALL_FAST_MODEL:-claude-sonnet-4-5-20250929}"
-    echo -e "${GREEN}✅ 已切换到 Claude Opus 4.5 (使用 Claude Pro 订阅)${NC}"
+    echo -e "${GREEN}✅ Switched to Claude Opus 4.5 (using Claude Pro subscription)${NC}"
     if [[ -n "$account_name" ]]; then
         echo "   $(t 'account'): $account_name"
     fi
@@ -1030,7 +1064,7 @@ switch_to_haiku() {
 
     # 如果指定了账号，先切换账号
     if [[ -n "$account_name" ]]; then
-        echo -e "${BLUE}📝 切换到账号: $account_name${NC}"
+        echo -e "${BLUE}📝 Switching to account: $account_name${NC}"
         if ! switch_account "$account_name"; then
             return 1
         fi
@@ -1039,7 +1073,7 @@ switch_to_haiku() {
     clean_env
     export ANTHROPIC_MODEL="${HAIKU_MODEL:-claude-haiku-4-5}"
     export ANTHROPIC_SMALL_FAST_MODEL="${HAIKU_SMALL_FAST_MODEL:-claude-haiku-4-5}"
-    echo -e "${GREEN}✅ 已切换到 Claude Haiku 4.5 (使用 Claude Pro 订阅)${NC}"
+    echo -e "${GREEN}✅ Switched to Claude Haiku 4.5 (using Claude Pro subscription)${NC}"
     if [[ -n "$account_name" ]]; then
         echo "   $(t 'account'): $account_name"
     fi
@@ -1049,7 +1083,7 @@ switch_to_haiku() {
 
 # 切换到GLM4.6
 switch_to_glm() {
-    echo -e "${YELLOW}🔄 切换到 GLM4.6 模型...${NC}"
+    echo -e "${YELLOW}🔄 Switching to GLM4.6 model...${NC}"
     clean_env
     if is_effectively_set "$GLM_API_KEY"; then
         export ANTHROPIC_BASE_URL="https://api.z.ai/api/anthropic"
@@ -1062,9 +1096,11 @@ switch_to_glm() {
         export ANTHROPIC_DEFAULT_HAIKU_MODEL="glm-4.5-air"
         export ANTHROPIC_DEFAULT_SONNET_MODEL="glm-4.6"
         export ANTHROPIC_DEFAULT_OPUS_MODEL="glm-4.6"
-        echo -e "${GREEN}✅ 已切换到 GLM4.6（官方）${NC}"
+        echo -e "${GREEN}✅ Switched to GLM4.6 (official)${NC}"
     else
         echo -e "${RED}❌ Please configure GLM_API_KEY${NC}"
+        echo -e "${YELLOW}💡 Run: ccm config  # Then add your API key${NC}"
+        echo -e "${YELLOW}💡 Or:  export GLM_API_KEY=your-key${NC}"
         return 1
     fi
     echo "   BASE_URL: $ANTHROPIC_BASE_URL"
@@ -1087,6 +1123,8 @@ switch_to_kimi() {
         echo -e "${GREEN}✅ $(t 'switched_to') KIMI（$(t 'official')）${NC}"
     else
         echo -e "${RED}❌ Please configure KIMI_API_KEY${NC}"
+        echo -e "${YELLOW}💡 Run: ccm config  # Then add your API key${NC}"
+        echo -e "${YELLOW}💡 Or:  export KIMI_API_KEY=your-key${NC}"
         return 1
     fi
     echo "   BASE_URL: $ANTHROPIC_BASE_URL"
@@ -1109,6 +1147,8 @@ switch_to_kimi_cn() {
         echo -e "${GREEN}✅ $(t 'switched_to') KIMI CN（$(t 'official')）${NC}"
     else
         echo -e "${RED}❌ Please configure KIMI_API_KEY${NC}"
+        echo -e "${YELLOW}💡 Run: ccm config  # Then add your API key${NC}"
+        echo -e "${YELLOW}💡 Or:  export KIMI_API_KEY=your-key${NC}"
         return 1
     fi
     echo "   BASE_URL: $ANTHROPIC_BASE_URL"
@@ -1131,6 +1171,8 @@ switch_to_minimax() {
         echo -e "${GREEN}✅ $(t 'switched_to') MiniMax M2（$(t 'official')）${NC}"
     else
         echo -e "${RED}❌ Please configure MINIMAX_API_KEY${NC}"
+        echo -e "${YELLOW}💡 Run: ccm config  # Then add your API key${NC}"
+        echo -e "${YELLOW}💡 Or:  export MINIMAX_API_KEY=your-key${NC}"
         return 1
     fi
     echo "   BASE_URL: $ANTHROPIC_BASE_URL"
@@ -1156,6 +1198,8 @@ switch_to_qwen() {
         echo -e "${GREEN}✅ $(t 'switched_to') Qwen（$(t 'alibaba_dashscope_official')）${NC}"
     else
         echo -e "${RED}❌ Please configure QWEN_API_KEY${NC}"
+        echo -e "${YELLOW}💡 Run: ccm config  # Then add your API key${NC}"
+        echo -e "${YELLOW}💡 Or:  export QWEN_API_KEY=your-key${NC}"
         return 1
     fi
     echo "   BASE_URL: $ANTHROPIC_BASE_URL"
@@ -1165,7 +1209,7 @@ switch_to_qwen() {
 
 # 切换到豆包 Seed-Code (Doubao)
 switch_to_seed() {
-    echo -e "${YELLOW}🔄 $(t 'switching_to') 豆包 Seed-Code $(t 'model')...${NC}"
+    echo -e "${YELLOW}🔄 $(t 'switching_to') Doubao Seed-Code $(t 'model')...${NC}"
     clean_env
     if is_effectively_set "$ARK_API_KEY"; then
         # 官方豆包 Seed-Code
@@ -1183,6 +1227,8 @@ switch_to_seed() {
         echo -e "${GREEN}✅ $(t 'switched_to') Seed-Code（$(t 'official')）${NC}"
     else
         echo -e "${RED}❌ Please configure ARK_API_KEY${NC}"
+        echo -e "${YELLOW}💡 Run: ccm config  # Then add your API key${NC}"
+        echo -e "${YELLOW}💡 Or:  export ARK_API_KEY=your-key${NC}"
         return 1
     fi
     echo "   BASE_URL: $ANTHROPIC_BASE_URL"
@@ -1233,8 +1279,8 @@ show_help() {
     echo -e "${YELLOW}$(t 'model_options'):${NC}"
     echo "  deepseek, ds       - env deepseek"
     echo "  kimi, kimi2        - env kimi for coding"
-    echo "  kimi-cn            - env kimi cn (国内版本)"
-    echo "  seed, doubao       - env 豆包 Seed-Code"
+    echo "  kimi-cn            - env kimi cn (China version)"
+    echo "  seed, doubao       - env Doubao Seed-Code"
     echo "  kat                - env kat"
     echo "  longcat, lc        - env longcat"
     echo "  minimax, mm        - env minimax"
@@ -1263,20 +1309,20 @@ show_help() {
     echo ""
     echo -e "${YELLOW}$(t 'examples'):${NC}"
     echo "  eval \"\$(ccm deepseek)\"                   # Apply in current shell (recommended)"
-    echo "  eval \"\$(ccm seed)\"                     # Switch to 豆包 Seed-Code with ARK_API_KEY"
+    echo "  eval \"\$(ccm seed)\"                     # Switch to Doubao Seed-Code with ARK_API_KEY"
     echo "  $(basename "$0") status                      # Check current status (masked)"
     echo "  $(basename "$0") save-account work           # Save current account as 'work'"
     echo "  $(basename "$0") opus:personal               # Switch to 'personal' account with Opus"
     echo ""
-    echo -e "${YELLOW}支持的模型:${NC}"
+    echo -e "${YELLOW}Supported models:${NC}"
     echo "  🌙 KIMI for Coding     - kimi-for-coding (api.kimi.com/coding)"
     echo "  🌕 KIMI CN             - kimi-k2-thinking (api.moonshot.cn/anthropic)"
     echo "  🤖 Deepseek            - deepseek-chat (api.deepseek.com)"
     echo "  🌊 StreamLake (KAT)    - KAT-Coder"
-    echo "  🌰 豆包 Seed-Code      - doubao-seed-code-preview-latest (火山引擎方舟)"
+    echo "  🌰 Doubao Seed-Code    - doubao-seed-code-preview-latest (Volcengine Ark)"
     echo "  🐱 LongCat             - LongCat-Flash-Thinking / LongCat-Flash-Chat"
     echo "  🎯 MiniMax M2          - MiniMax-M2 (api.minimax.io)"
-    echo "  🐪 Qwen                - qwen3-max (阿里云 DashScope)"
+    echo "  🐪 Qwen                - qwen3-max (Alibaba DashScope)"
     echo "  🇨🇳 GLM4.6             - glm-4.6 / glm-4.5-air (api.z.ai)"
     echo "  🧠 Claude Sonnet 4.5   - claude-sonnet-4-5-20250929"
     echo "  🚀 Claude Opus 4.5     - claude-opus-4-5-20251101"
@@ -1396,6 +1442,8 @@ emit_env_exports() {
                 echo "export ANTHROPIC_SMALL_FAST_MODEL='${ds_small}'"
             else
                 echo -e "${RED}❌ Please configure DEEPSEEK_API_KEY${NC}" >&2
+                echo -e "${YELLOW}💡 Run: ccm config  # Then add your API key${NC}" >&2
+                echo -e "${YELLOW}💡 Or:  export DEEPSEEK_API_KEY=your-key${NC}" >&2
                 return 1
             fi
             ;;
@@ -1414,6 +1462,8 @@ emit_env_exports() {
                 echo "export ANTHROPIC_SMALL_FAST_MODEL='${kimi_small}'"
             else
                 echo -e "${RED}❌ Please configure KIMI_API_KEY${NC}" >&2
+                echo -e "${YELLOW}💡 Run: ccm config  # Then add your API key${NC}" >&2
+                echo -e "${YELLOW}💡 Or:  export KIMI_API_KEY=your-key${NC}" >&2
                 return 1
             fi
             ;;
@@ -1432,6 +1482,8 @@ emit_env_exports() {
                 echo "export ANTHROPIC_SMALL_FAST_MODEL='${kimi_cn_small}'"
             else
                 echo -e "${RED}❌ Please configure KIMI_API_KEY${NC}" >&2
+                echo -e "${YELLOW}💡 Run: ccm config  # Then add your API key${NC}" >&2
+                echo -e "${YELLOW}💡 Or:  export KIMI_API_KEY=your-key${NC}" >&2
                 return 1
             fi
             ;;
@@ -1450,6 +1502,8 @@ emit_env_exports() {
                 echo "export ANTHROPIC_SMALL_FAST_MODEL='${qwen_small}'"
             else
                 echo -e "${RED}❌ Please configure QWEN_API_KEY${NC}" >&2
+                echo -e "${YELLOW}💡 Run: ccm config  # Then add your API key${NC}" >&2
+                echo -e "${YELLOW}💡 Or:  export QWEN_API_KEY=your-key${NC}" >&2
                 return 1
             fi
             ;;
@@ -1471,6 +1525,8 @@ emit_env_exports() {
                 echo "export ANTHROPIC_DEFAULT_OPUS_MODEL='glm-4.6'"
             else
                 echo -e "${RED}❌ Please configure GLM_API_KEY${NC}" >&2
+                echo -e "${YELLOW}💡 Run: ccm config  # Then add your API key${NC}" >&2
+                echo -e "${YELLOW}💡 Or:  export GLM_API_KEY=your-key${NC}" >&2
                 return 1
             fi
             ;;
@@ -1542,6 +1598,8 @@ emit_env_exports() {
                 echo "export ANTHROPIC_SMALL_FAST_MODEL='${mm_small}'"
             else
                 echo -e "${RED}❌ Please configure MINIMAX_API_KEY${NC}" >&2
+                echo -e "${YELLOW}💡 Run: ccm config  # Then add your API key${NC}" >&2
+                echo -e "${YELLOW}💡 Or:  export MINIMAX_API_KEY=your-key${NC}" >&2
                 return 1
             fi
             ;;
@@ -1560,6 +1618,8 @@ emit_env_exports() {
                 echo "export ANTHROPIC_SMALL_FAST_MODEL='${seed_small}'"
             else
                 echo -e "${RED}❌ Please configure ARK_API_KEY${NC}" >&2
+                echo -e "${YELLOW}💡 Run: ccm config  # Then add your API key${NC}" >&2
+                echo -e "${YELLOW}💡 Or:  export ARK_API_KEY=your-key${NC}" >&2
                 return 1
             fi
             ;;
