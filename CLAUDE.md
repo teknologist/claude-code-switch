@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Claude Code Model Switcher (CCM)** is a utility for developers to quickly switch between multiple AI service providers and models in Claude Code IDE. It's a pure Bash implementation (~970 lines) that provides intelligent fallback mechanisms between official APIs and PPINFRA backup service.
+**Claude Code Model Switcher (CCM)** is a utility for developers to quickly switch between multiple AI service providers and models in Claude Code IDE. It's a pure Bash implementation that supports multiple model providers with their official APIs.
 
 **Supported Providers:** Anthropic Claude, DeepSeek, Moonshot KIMI, Zhipu GLM, Alibaba Qwen, MeiTuan LongCat
 
@@ -42,14 +42,7 @@ Priority order for configuration values:
 
 Key function: `is_effectively_set()` checks if value is valid (not placeholder like "sk-your-...").
 
-### 3. **Fallback Mechanism**
-
-Each model follows this pattern:
-- Check for official API key in env var → use official API
-- If missing, fall back to PPINFRA service (if available)
-- Special handling: DeepSeek has experience key for zero-config PPINFRA access
-
-### 4. **Environment Setup Pattern**
+### 3. **Environment Setup Pattern**
 
 `emit_env_exports()` function outputs export statements that are `eval`'d to set variables:
 ```bash
@@ -109,7 +102,6 @@ ccm status / ccm st      # Show current config (tokens masked)
 ccm help / ccm -h        # Show help
 ccm config / ccm cfg     # Edit configuration in editor
 ccm env <model>          # Output env exports only (no launcher)
-ccm pp <model>           # Switch to PPINFRA version of model
 ```
 
 ### Testing & Verification
@@ -134,7 +126,6 @@ Key functions and their line ranges (approximately):
 - `is_effectively_set()` - Validate config values
 - `mask_token()` - Mask secrets for status output
 - `switch_to_*()` - Model-specific functions (deepseek, kimi, glm, qwen, longcat, claude, opus, haiku)
-- `switch_to_ppinfra()` - PPINFRA service routing
 - `show_status()` - Display masked configuration
 - `show_help()` - Display help information
 - `edit_config()` - Open config in editor (cursor/code/vim/nano)
@@ -161,16 +152,17 @@ Location: `~/.ccm_config`
 
 ## Supported Models & API Endpoints
 
-| Model | Official API | PPINFRA Alt | Base URL |
-|-------|-------------|-------------|----------|
-| Claude Sonnet 4.5 | claude-sonnet-4-5-20250929 | N/A | Anthropic default |
-| Claude Opus 4.1 | claude-opus-4-1-20250805 | N/A | Anthropic default |
-| Claude Haiku 4.5 | claude-haiku-4-5 | N/A | Anthropic default |
-| DeepSeek | deepseek-chat | deepseek/deepseek-v3.2-exp | https://api.deepseek.com/anthropic |
-| KIMI2 | kimi-k2-turbo-preview | kimi-k2-turbo-preview | https://api.moonshot.cn/anthropic |
-| GLM | glm-4.6 | zai-org/glm-4.6 | https://open.bigmodel.cn/api/anthropic |
-| Qwen | qwen3-max | qwen3-next-80b-a3b-thinking | https://dashscope.aliyuncs.com/... |
-| LongCat | LongCat-Flash-Thinking | N/A | https://api.longcat.chat/anthropic |
+| Model | Model ID | Base URL |
+|-------|----------|----------|
+| Claude Sonnet 4.5 | claude-sonnet-4-5-20250929 | Anthropic default |
+| Claude Opus 4.5 | claude-opus-4-5-20251101 | Anthropic default |
+| Claude Haiku 4.5 | claude-haiku-4-5 | Anthropic default |
+| DeepSeek | deepseek-chat | https://api.deepseek.com/anthropic |
+| KIMI | kimi-for-coding | https://api.kimi.com/coding/ |
+| GLM 4.6 | glm-4.6 | https://api.z.ai/api/anthropic |
+| Qwen | qwen3-max | https://dashscope.aliyuncs.com/... |
+| LongCat | LongCat-Flash-Thinking | https://api.longcat.chat/anthropic |
+| MiniMax | MiniMax-M2 | https://api.minimax.io/anthropic |
 
 ## Current Development
 
@@ -188,12 +180,6 @@ Location: `~/.ccm_config`
 - Loaded dynamically based on system locale via `load_translations()`
 - Falls back to English if translation missing
 - Language override: Set `CCM_LANGUAGE=en` or `CCM_LANGUAGE=zh`
-
-### Zero-Config Support
-
-- Built-in DeepSeek 3.1 experience key for PPINFRA service
-- Allows immediate testing without API key configuration
-- Located in `ccm.sh` - allows `ccm pp deepseek` to work out-of-box
 
 ### Security Notes
 
@@ -229,7 +215,6 @@ eval "$(ccm env deepseek)" && env | grep ANTHROPIC
 
 ## Documentation References
 
-- **User Guide:** README.md (16.5KB) / README_CN.md
-- **Troubleshooting:** TROUBLESHOOTING.md (7.3KB)
-- **PPINFRA Guide:** PPINFRA_USAGE.md (4.7KB)
+- **User Guide:** README.md / README_CN.md
+- **Troubleshooting:** TROUBLESHOOTING.md
 - **Version History:** CHANGELOG.md

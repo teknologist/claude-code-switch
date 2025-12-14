@@ -8,6 +8,35 @@
 
 [中文文档](README_CN.md) | [English](README.md)
 
+## 🔄 Changes from Original Project
+
+This is a fork of the original [claude-code-switch](https://github.com/foreveryh/claude-code-switch) with the following significant modifications:
+
+### Removed PPInfra Integration
+- ❌ **Removed all PPInfra fallback functionality** - The backup service integration has been completely removed
+- ❌ **Deleted PPInfra-related configuration options** - `PPINFRA_API_KEY` and associated settings removed
+- ❌ **Removed PPInfra commands** - No more `ccm pp` or `ccc pp` commands
+- ❌ **Deleted PPINFRA_USAGE.md** - Documentation for PPInfra service removed
+- ❌ **Simplified model switching logic** - Removed fallback branching logic that checked for PPInfra keys
+
+### Security Improvements
+- ✅ **Enhanced input validation** - Improved validation for API keys and configuration
+- ✅ **Fixed 7 security vulnerabilities** - Addressed potential security issues in the codebase
+- ✅ **Cleaner configuration management** - Streamlined config without fallback complexity
+
+### Model Updates
+- ✅ **Added Claude Haiku 4.5 support** - Latest fast model from Anthropic
+- ✅ **Updated Claude Opus to 4.5** - Upgraded from Opus 4.1 to 4.5
+- ✅ **Added Doubao Seed-Code model** - New code-optimized model from Volcano Engine
+
+### Key Differences in Usage
+- Model switching now requires official API keys only
+- No backup service fallbacks available
+- Cleaner, more straightforward configuration
+- Enhanced security posture
+
+---
+
 ## 🎯 Quick Start (Zero Configuration)
 
 Want to try immediately **without any API key**? Start in 3 steps:
@@ -25,15 +54,14 @@ ccc deepseek     # Launch Claude Code with DeepSeek
 ```
 
 ✨ **That's it!** You now have a working Claude Code setup with:
-- ✅ Built-in experience keys (via PPINFRA)
-- ✅ Zero configuration required
 - ✅ Multiple model support
-- ✅ Add your own API keys later for unlimited usage
+- ✅ Easy configuration management
+- ✅ Add your own API keys for full functionality
+- ⚠️ **Note**: This version requires official API keys for each provider
 
 ## 🌟 Features
 
 - 🤖 **Multi-model Support**: Claude, Deepseek, KIMI, GLM, Qwen and other mainstream AI models
-- 🔄 **Smart Fallback Mechanism**: Official API priority with automatic fallback to PPINFRA backup service
 - ⚡ **Quick Switching**: One-click switching between different AI models to boost productivity
 - 🚀 **One-Command Launch**: `ccc` command switches model and launches Claude Code in a single step
 - 🎨 **Colorful Interface**: Intuitive command-line interface with clear switching status display
@@ -42,20 +70,20 @@ ccc deepseek     # Launch Claude Code with DeepSeek
 
 ## 📦 Supported Models
 
-| Model | Official Support | Fallback Support(PPINFRA) | Features |
-|-------|------------------|---------------------------|----------|
-| 🌙 **KIMI for Coding** | ✅ kimi-for-coding | ✅ kimi-k2-turbo-preview | Kimi official coding version |
-| 🌕 **KIMI CN** | ✅ kimi-k2-thinking | ✅ kimi-k2-thinking | Kimi China domestic version |
-| 🤖 **Deepseek** | ✅ deepseek-chat | ✅ deepseek/deepseek-v3.2-exp | Cost-effective reasoning |
-| 🌰 **Doubao Seed-Code** | ✅ doubao-seed-code-preview-latest | ❌ Official only | Volcano Engine, code-optimized |
-| 🐱 **LongCat** | ✅ LongCat-Flash-Chat | ❌ Official only | High-speed chat |
-| 🎯 **MiniMax M2** | ✅ MiniMax-M2 | ✅ minimax/minimax-m2 | Code & reasoning |
-| 🌊 **StreamLake (KAT)** | ✅ KAT-Coder | ❌ Official only | StreamLake AI |
-| 🐪 **Qwen** | ✅ qwen3-max (Alibaba DashScope) | ✅ qwen3-next-80b-a3b-thinking | Alibaba Cloud official |
-| 🇨🇳 **GLM4.6** | ✅ glm-4.6 | ✅ zai-org/glm-4.6 | Zhipu AI |
-| 🧠 **Claude Sonnet 4.5** | ✅ claude-sonnet-4-5-20250929 | ❌ Official only | Balanced performance |
-| 🚀 **Claude Opus 4.5** | ✅ claude-opus-4-5-20251101 | ❌ Official only | Strongest reasoning |
-| 🔷 **Claude Haiku 4.5** | ✅ claude-haiku-4-5 | ❌ Official only | Fast and efficient |
+| Model | Model ID | Provider | Features |
+|-------|----------|----------|----------|
+| 🌙 **KIMI for Coding** | kimi-for-coding | Moonshot AI | Official coding version |
+| 🌕 **KIMI CN** | kimi-k2-thinking | Moonshot AI | China domestic version |
+| 🤖 **Deepseek** | deepseek-chat | DeepSeek | Cost-effective reasoning |
+| 🌰 **Doubao Seed-Code** | doubao-seed-code-preview-latest | Volcano Engine | Code-optimized |
+| 🐱 **LongCat** | LongCat-Flash-Chat | LongCat | High-speed chat |
+| 🎯 **MiniMax M2** | MiniMax-M2 | MiniMax | Code & reasoning |
+| 🌊 **StreamLake (KAT)** | KAT-Coder | StreamLake | AI coding assistant |
+| 🐪 **Qwen** | qwen3-max | Alibaba DashScope | Alibaba Cloud |
+| 🇨🇳 **GLM4.6** | glm-4.6 | Zhipu AI | Zhipu AI |
+| 🧠 **Claude Sonnet 4.5** | claude-sonnet-4-5-20250929 | Anthropic | Balanced performance |
+| 🚀 **Claude Opus 4.5** | claude-opus-4-5-20251101 | Anthropic | Strongest reasoning |
+| 🔷 **Claude Haiku 4.5** | claude-haiku-4-5 | Anthropic | Fast and efficient |
 
 > 🎁 **GLM-4.6 Official Registration**
 >
@@ -63,15 +91,7 @@ ccc deepseek     # Launch Claude Code with DeepSeek
 > - **Registration Link**: https://www.bigmodel.cn/claude-code?ic=5XMIOZPPXB
 > - **Invitation Code**: `5XMIOZPPXB`
 >
-> GLM-4.6 supports official Claude Code integration with zero-configuration experience. No API key needed to get started!
-
-> 💰 **PPINFRA Fallback Service Registration**
->
-> Get **¥15 voucher** when registering PPINFRA service:
-> - **Registration Link**: https://ppio.com/user/register?invited_by=ZQRQZZ
-> - **Invitation Code**: `ZQRQZZ`
->
-> PPINFRA provides reliable fallback service for Deepseek, KIMI, Qwen, and GLM models when official APIs are unavailable.
+> GLM-4.6 supports official Claude Code integration with zero-configuration experience.
 
 ## 🛠️ Installation
 
@@ -167,9 +187,6 @@ QWEN_MODEL=qwen3-max
 GLM_MODEL=glm-4.6
 CLAUDE_MODEL=claude-sonnet-4-5-20250929
 OPUS_MODEL=claude-opus-4-5-20251101
-
-# Fallback service (only enabled when official keys are missing)
-PPINFRA_API_KEY=your-ppinfra-api-key
 ```
 
 **Security Note:** Recommend `chmod 600 ~/.ccm_config` to protect your API keys.
@@ -289,14 +306,14 @@ CCM_KEYCHAIN_SERVICE="Claude Code" ccm debug-keychain
 ```bash
 ccm deepseek      # Switch to DeepSeek
 ccm glm           # Switch to GLM4.6
-ccm pp kimi       # Switch to PPINFRA KIMI
+ccm kimi          # Switch to KIMI
 claude            # Then manually launch Claude Code
 ```
 
 **Method 2: `ccc` - One-Command Launch (Recommended)**
 ```bash
 ccc deepseek                            # Switch and launch
-ccc pp glm                              # Switch to PPINFRA and launch
+ccc glm                                 # Switch and launch
 ccc kimi --dangerously-skip-permissions # Pass options to Claude Code
 ```
 
@@ -317,18 +334,11 @@ ccm claude        # Switch to Claude Sonnet 4.5
 ccm opus          # Switch to Claude Opus 4.5
 ccm haiku         # Switch to Claude Haiku 4.5
 
-# Switch to PPINFRA service
-ccm pp            # Interactive PPINFRA model selection
-ccm pp deepseek   # Direct switch to PPINFRA DeepSeek
-ccm pp glm        # Direct switch to PPINFRA GLM
-ccm pp kimi       # Direct switch to PPINFRA KIMI
-ccm pp minimax    # Direct switch to PPINFRA MiniMax M2
-ccm pp qwen       # Direct switch to PPINFRA Qwen
 
 # Launch Claude Code
 ccc deepseek      # Switch to DeepSeek and launch
 ccc seed          # Switch to Seed-Code and launch
-ccc pp glm        # Switch to PPINFRA GLM and launch
+ccc glm           # Switch to GLM and launch
 ccc opus          # Switch to Claude Opus and launch
 ccc kat           # Switch to StreamLake (KAT) and launch
 
@@ -352,7 +362,6 @@ ccm st           # Short for status
 
 # ccc shortcuts
 ccc ds           # Launch with DeepSeek
-ccc pp ds        # Launch with PPINFRA DeepSeek
 ccc kat          # Launch with StreamLake (KAT)
 ```
 
@@ -385,23 +394,16 @@ claude  # Launch manually
 
 **Example 3: One-command launch**
 ```bash
-ccc pp glm --dangerously-skip-permissions
-🔄 Switching to PPINFRA glm...
-✅ Environment configured for: GLM (PPINFRA)
+ccc glm --dangerously-skip-permissions
+🔄 Switching to GLM...
+✅ Environment configured for: GLM
 
 🚀 Launching Claude Code...
-   Model: zai-org/glm-4.6
-   Base URL: https://api.ppinfra.com/anthropic
+   Model: glm-4.6
+   Base URL: https://api.z.ai/api/anthropic
 ```
 
 ## 🔧 Advanced Features
-
-### Smart Fallback Mechanism
-
-CCM implements intelligent fallback:
-- **Official API Priority**: Uses official service if official keys are configured
-- **Auto Fallback**: Automatically switches to PPINFRA backup service when official keys are missing
-- **Transparent Switching**: Seamless to users, commands remain consistent
 
 ### Service Integrations
 
@@ -410,15 +412,10 @@ CCM implements intelligent fallback:
 - Default Models: `qwen3-max` (primary), `qwen3-next-80b-a3b-instruct` (fast)
 - API Key Format: Standard `sk-` prefix from Alibaba Cloud console
 
-**PPINFRA Fallback Service**:
-- Base URL: `https://api.ppinfra.com/anthropic`
-- Supported models:
-  - `kimi-k2-turbo-preview` (KIMI fallback)
-  - `deepseek/deepseek-v3.2-exp` (Deepseek fallback)
-  - `MiniMax-M2` (MiniMax official)
-  - `minimax/minimax-m2` (MiniMax PPINFRA fallback)
-  - `qwen3-next-80b-a3b-thinking` (Qwen fallback)
-  - `zai-org/glm-4.6` (GLM fallback)
+**Model-specific Endpoints**:
+- Each model provider uses their official API endpoint
+- Configuration is simplified - no fallback services needed
+- Direct API communication ensures best performance and reliability
 
 ### Security and Privacy
 

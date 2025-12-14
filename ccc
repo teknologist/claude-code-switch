@@ -14,18 +14,16 @@ usage() {
 Usage: ./ccc <model> [claude-options]
        ./ccc <account> [claude-options]        # Switch account then launch (default model)
        ./ccc <model>:<account> [claude-options]
-       ./ccc pp <model> [claude-options]
 
 Examples:
   ./ccc deepseek                     # Launch Claude Code with DeepSeek
-  ./ccc pp glm                       # Launch with PPINFRA GLM
+  ./ccc glm                          # Launch with GLM 4.6
   ./ccc kimi --dangerously-skip-permissions  # Pass options to Claude Code
   ./ccc woohelps                     # Switch to 'woohelps' account and launch
   ./ccc opus:work                    # Switch to 'work' account and use Opus
 
 Available models:
-  Official: deepseek, glm, kimi, qwen, seed|doubao, claude, opus, haiku, longcat, minimax
-  PPINFRA:  pp deepseek | pp glm | pp kimi | pp qwen
+  deepseek, glm, kimi, qwen, seed|doubao, claude, opus, haiku, longcat, minimax
   Account:  <account> | claude:<account> | opus:<account> | haiku:<account>
 EOF
 }
@@ -34,19 +32,6 @@ if [[ ! -f "$CCM" ]]; then
     echo "ccc error: cannot find ccm CLI at $CCM" >&2
     echo "Hint: ensure ccm.sh exists next to this script, or set CCM_CMD=/path/to/ccm.sh" >&2
     exit 1
-fi
-
-if [[ $# -lt 1 ]]; then
-    usage
-    exit 1
-fi
-
-use_pp=false
-model=""
-
-if [[ "${1:-}" == "pp" ]]; then
-    use_pp=true
-    shift || true
 fi
 
 if [[ $# -lt 1 ]]; then
@@ -70,8 +55,8 @@ is_known_model() {
     esac
 }
 
-# Account-only mode: `ccc <account>` (not pp, not known model, no colon)
-if ! $use_pp && [[ "$model" != *:* ]] && ! is_known_model "$model" && [[ ! "$model" =~ ^- ]]; then
+# Account-only mode: `ccc <account>` (not known model, no colon)
+if [[ "$model" != *:* ]] && ! is_known_model "$model" && [[ ! "$model" =~ ^- ]]; then
     account="$model"
     # 1) Switch account directly (no eval)
     if ! "$CCM" switch-account "$account"; then
@@ -84,12 +69,7 @@ if ! $use_pp && [[ "$model" != *:* ]] && ! is_known_model "$model" && [[ ! "$mod
     eval "$("$CCM" claude)"
 else
     # Configure environment for this process using repo-local ccm
-    if $use_pp; then
-        # pass no_color=true so status messages go to stderr and exports are clean on stdout
-        eval "$("$CCM" pp "$model" true)"
-    else
-        eval "$("$CCM" "$model")"
-    fi
+    eval "$("$CCM" "$model")"
 fi
 
 # Friendly status

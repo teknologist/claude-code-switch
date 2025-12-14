@@ -292,41 +292,23 @@ ccc() {
     echo ""
     echo "Examples:"
     echo "  ccc deepseek                              # Launch with DeepSeek"
-    echo "  ccc pp deepseek                           # Launch with PPINFRA DeepSeek"
-    echo "  ccc glm --dangerously-skip-permissions    # Launch GLM with options"
+    echo "  ccc glm                                   # Launch with GLM 4.6"
+    echo "  ccc kimi --dangerously-skip-permissions   # Launch KIMI with options"
     echo ""
     echo "Available models:"
-    echo "  Official: deepseek, glm, kimi, qwen, claude, opus, longcat"
-    echo "  PPINFRA:  pp deepseek, pp glm, pp kimi, pp qwen"
+    echo "  deepseek, glm, kimi, qwen, claude, opus, haiku, longcat, minimax"
     return 1
   fi
 
-  # Check for pp prefix
-  local use_pp=false
-  local model=""
-  local claude_args=()
-
-  if [[ "$1" == "pp" ]]; then
-    use_pp=true
-    shift
-    model="$1"
-    shift
-  else
-    model="$1"
-    shift
-  fi
+  local model="$1"
+  shift
 
   # Collect additional Claude Code arguments
-  claude_args=("$@")
+  local claude_args=("$@")
 
   # Call ccm to set environment variables
-  if $use_pp; then
-    echo "🔄 Switching to PPINFRA $model..."
-    ccm pp "$model" || return 1
-  else
-    echo "🔄 Switching to $model..."
-    ccm "$model" || return 1
-  fi
+  echo "🔄 Switching to $model..."
+  ccm "$model" || return 1
 
   echo ""
   echo "🚀 Launching Claude Code..."
@@ -410,12 +392,11 @@ print_usage() {
 📖 Documentation:
   ccm help             # View help
   ccm config           # Edit configuration file
-  ccm pp glm           # Use PPINFRA fallback service
 
 💡 Example workflows:
   eval "$(ccm env deepseek)"    # Apply to current shell
   ccc kimi                       # Launch with KIMI
-  ccc pp qwen                    # Launch with PPINFRA Qwen
+  ccc glm                        # Launch with GLM 4.6
 
 🔧 Configuration:
   ~/.ccm_config        # Edit your API keys

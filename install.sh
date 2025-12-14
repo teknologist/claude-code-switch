@@ -113,32 +113,20 @@ ccc() {
     echo ""
     echo "Examples:"
     echo "  ccc deepseek                              # Launch with DeepSeek"
-    echo "  ccc pp deepseek                           # Launch with PPINFRA DeepSeek"
+    echo "  ccc glm                                   # Launch with GLM 4.6"
     echo "  ccc woohelps                              # Switch to 'woohelps' account and launch"
     echo "  ccc opus:work                             # Switch to 'work' account and launch Opus"
-    echo "  ccc glm --dangerously-skip-permissions    # Launch GLM with options"
+    echo "  ccc kimi --dangerously-skip-permissions   # Launch KIMI with options"
     echo ""
     echo "Available models:"
-    echo "  Official: deepseek, glm, kimi, qwen, claude, opus, haiku, longcat"
-    echo "  PPINFRA:  pp deepseek, pp glm, pp kimi, pp qwen"
+    echo "  deepseek, glm, kimi, qwen, claude, opus, haiku, longcat, minimax"
     echo "  Account:  <account> | claude:<account> | opus:<account> | haiku:<account>"
     return 1
   fi
 
-  # Check for pp prefix
-  local use_pp=false
-  local model=""
+  local model="\$1"
+  shift
   local claude_args=()
-  
-  if [[ "\$1" == "pp" ]]; then
-    use_pp=true
-    shift
-    model="\$1"
-    shift
-  else
-    model="\$1"
-    shift
-  fi
   
   # Collect additional Claude Code arguments
   claude_args=("\$@")
@@ -154,25 +142,20 @@ ccc() {
   }
 
   # Configure environment via ccm
-  if \$use_pp; then
-    echo "🔄 Switching to PPINFRA \$model..."
-    ccm pp "\$model" || return 1
+  if [[ "\$model" == *:* ]]; then
+    # model:account form handled by ccm
+    echo "🔄 Switching to \$model..."
+    ccm "\$model" || return 1
+  elif _is_known_model "\$model"; then
+    echo "🔄 Switching to \$model..."
+    ccm "\$model" || return 1
   else
-    if [[ "\$model" == *:* ]]; then
-      # model:account form handled by ccm
-      echo "🔄 Switching to \$model..."
-      ccm "\$model" || return 1
-    elif _is_known_model "\$model"; then
-      echo "🔄 Switching to \$model..."
-      ccm "\$model" || return 1
-    else
-      # Treat as account name
-      local account="\$model"
-      echo "🔄 Switching account to \$account..."
-      ccm switch-account "\$account" || return 1
-      # Set default model (Claude Sonnet)
-      ccm claude || return 1
-    fi
+    # Treat as account name
+    local account="\$model"
+    echo "🔄 Switching account to \$account..."
+    ccm switch-account "\$account" || return 1
+    # Set default model (Claude Sonnet)
+    ccm claude || return 1
   fi
 
   echo ""
@@ -259,8 +242,8 @@ main() {
   echo "   Then use:"
   echo "     ccm deepseek       # Switch model in current terminal"
   echo "     ccc deepseek       # Switch model and launch Claude Code"
-  echo "     ccm pp glm         # Use PPINFRA fallback service"
-  echo "     ccc pp glm         # PPINFRA + launch Claude Code"
+  echo "     ccm glm            # Switch to GLM 4.6"
+  echo "     ccc glm            # GLM 4.6 + launch Claude Code"
 }
 
 main "$@"
